@@ -5,6 +5,9 @@ on:
     - cron: '*/30 * * * *'
   workflow_dispatch:  # 允许手动触发
 
+permissions:
+  contents: write        # 允许写入代码库（git push）
+
 jobs:
   notify:
     runs-on: ubuntu-latest
