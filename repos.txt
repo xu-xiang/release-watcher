@@ -1,0 +1,4 @@
+projectdiscovery/nuclei-templates
+projectdiscovery/nuclei
+coreruleset/coreruleset
+coreruleset/go-ftw

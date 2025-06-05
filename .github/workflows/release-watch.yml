@@ -1,0 +1,74 @@
+name: Watch External Project Releases
+
+on:
+  schedule:         # 每 30 分钟检查一次
+    - cron: '*/30 * * * *'
+  workflow_dispatch:  # 允许手动触发
+
+jobs:
+  notify:
+    runs-on: ubuntu-latest
+    steps:
+    ############## 1. 拉取仓库，确保 state.json 存在 ################
+    - name: Checkout
+      uses: actions/checkout@v4
+
+    - name: Ensure state.json
+      run: |
+        [[ -f state.json ]] || echo '{}' > state.json
+
+    ############## 2. 安装 jq ################
+    - name: Install jq
+      run: sudo apt-get -qq update && sudo apt-get -qq install -y jq
+
+    ############## 3. 读取 repos.txt，检查最新 Release ################
+    - name: Scan repositories
+      id: scan
+      run: |
+        changed=false
+        notice=""
+        while IFS= read -r repo || [[ -n "$repo" ]]; do
+          [[ -z "$repo" ]] && continue        # 忽略空行
+          echo "==> $repo"
+          api="https://api.github.com/repos/${repo}/releases/latest"
+          json=$(curl -sL "$api" -H "Authorization: Bearer ${{ github.token }}")
+          tag=$(jq -r '.tag_name // empty' <<< "$json")
+          url=$(jq -r '.html_url // empty' <<< "$json")
+          if [[ -z "$tag" ]]; then
+            echo "   ↳ no releases"; continue
+          fi
+
+          last=$(jq -r --arg repo "$repo" '.[$repo] // empty' state.json)
+          if [[ "$tag" != "$last" ]]; then
+            echo "   ↳ NEW $tag"
+            changed=true
+            notice="${notice}\n📢 ${repo} 发布新版本：${tag}\n👉 ${url}\n"
+            tmp=$(mktemp)
+            jq --arg repo "$repo" --arg tag "$tag" '.[$repo]=$tag' state.json > "$tmp" && mv "$tmp" state.json
+          else
+            echo "   ↳ up-to-date ($tag)"
+          fi
+        done < repos.txt
+        echo -e "$notice" > notice.txt
+        echo "changed=$changed" >> $GITHUB_OUTPUT
+
+    ############## 4. 调用蓝信 Webhook 发送通知 ################
+    - name: Send message to Lanxin
+      if: steps.scan.outputs.changed == 'true'
+      run: |
+        text=$(cat notice.txt)
+        payload=$(jq -n --arg txt "$text" \
+          '{msgType:"text", msgData:{text:{content:$txt}}}')
+        curl -s -X POST '${{ secrets.LANXIN_WEBHOOK }}' \
+          -H 'Content-Type: application/json' \
+          -d "$payload"
+
+    ############## 5. 保存 state.json 防止重复通知 ################
+    - name: Commit new state
+      if: steps.scan.outputs.changed == 'true'
+      run: |
+        git config user.name release-bot
+        git config user.email release-bot@users.noreply.github.com
+        git add state.json
+        git commit -m "bot: update release state [skip ci]"
+        git push
