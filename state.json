@@ -1,6 +1,6 @@
 {
   "projectdiscovery/nuclei-templates": "v10.2.7",
-  "projectdiscovery/nuclei": "v3.4.8",
+  "projectdiscovery/nuclei": "v3.4.9",
   "coreruleset/coreruleset": "v4.17.1",
   "coreruleset/go-ftw": "v1.3.0"
 }
